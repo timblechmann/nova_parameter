@@ -1,0 +1,16 @@
+name: CI builds
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: timblechmann/nova_github_actions/.github/workflows/cmake-ci.yml@main
+    with:
+      cmake_args: -DNOVA_PARAMETER_TESTS=ON
