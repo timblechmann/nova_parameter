@@ -92,6 +92,7 @@ if(NOVA_PARAMETER_TESTS)
         unknown_parameter
         missing_required_parameter
         concept_param_violation
+        extract_required_missing
     )
     foreach(_neg_test IN LISTS negative_compile_test)
         add_executable(nova_parameter_neg_${_neg_test} EXCLUDE_FROM_ALL

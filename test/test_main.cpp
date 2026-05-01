@@ -252,6 +252,24 @@ static_assert(
     !nova::parameter::extract_optional_integral_v< example::capacity_tag, std::size_t, example::fixed_sized< true > >.has_value() );
 static_assert( !nova::parameter::extract_optional_integral_v< example::capacity_tag, std::size_t >.has_value() );
 
+// extract_required_t — tag present
+static_assert( std::is_same_v< nova::parameter::extract_required_t< example::allocator_tag,
+                                                                    example::allocator< std::allocator< float > >,
+                                                                    example::capacity< 64 > >,
+                               std::allocator< float > > );
+static_assert( std::is_same_v< nova::parameter::extract_required_t< example::capacity_tag, example::capacity< 99 > >,
+                               std::integral_constant< std::size_t, 99 > > );
+
+// extract_required_integral_v — tag present
+static_assert( nova::parameter::extract_required_integral_v< example::capacity_tag, std::size_t, example::capacity< 42 > >
+               == 42 );
+
+// extract_required_bool_v — tag present
+static_assert( nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< true > >
+               == true );
+static_assert( nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >
+               == false );
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Runtime tests
 
@@ -382,4 +400,31 @@ TEST_CASE( "concept_container with default allocator", "[parameter]" )
     example::concept_container<> c;
     using alloc = decltype( c )::allocator_type;
     REQUIRE( (std::is_same_v< alloc, std::allocator< int > >));
+}
+
+TEST_CASE( "extract_required_t returns correct type", "[parameter][required]" )
+{
+    using cap_type
+        = nova::parameter::extract_required_t< example::capacity_tag, example::capacity< 77 >, example::fixed_sized< true > >;
+    static_assert( std::is_same_v< cap_type, std::integral_constant< std::size_t, 77 > > );
+    REQUIRE( cap_type::value == 77 );
+}
+
+TEST_CASE( "extract_required_integral_v returns value", "[parameter][required]" )
+{
+    constexpr auto val = nova::parameter::extract_required_integral_v< example::capacity_tag,
+                                                                       std::size_t,
+                                                                       example::fixed_sized< true >,
+                                                                       example::capacity< 55 > >;
+    REQUIRE( val == 55 );
+}
+
+TEST_CASE( "extract_required_bool_v returns value", "[parameter][required]" )
+{
+    constexpr bool t = nova::parameter::
+        extract_required_bool_v< example::fixed_sized_tag, example::capacity< 10 >, example::fixed_sized< true > >;
+    constexpr bool f
+        = nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >;
+    REQUIRE( t );
+    REQUIRE( !f );
 }

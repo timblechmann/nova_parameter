@@ -196,6 +196,18 @@ struct assert_required_impl< std::tuple< HeadTag, TailTags... >, Params... >
     static constexpr bool value = this_found && assert_required_impl< std::tuple< TailTags... >, Params... >::value;
 };
 
+// ---- extract_required: like extract_impl but static_asserts if tag not found ----
+
+template < typename Tag, typename... Params >
+struct extract_required_impl
+{
+    using found = extract_impl< Tag, not_found_t, Params... >;
+    static_assert( !std::is_same_v< typename found::type, not_found_t >,
+                   "extract_required: required tag is missing from parameter list. "
+                   "See 'Tag' in the enclosing template instantiation." );
+    using type = typename found::type;
+};
+
 } // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -252,6 +264,18 @@ inline constexpr std::optional< IntegralType > extract_optional_integral_v = [](
 ///   using MyType = extract_t<my_tag, void, Params...>;
 ///   if constexpr (!std::is_same_v<MyType, void>) { /* present */ }
 /// Or use has_parameter_v for a bool check.
+
+/// Extract value type for Tag from Params — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+using extract_required_t = typename detail::extract_required_impl< Tag, Params... >::type;
+
+/// Extract required integral value — static_assert if Tag absent.
+template < typename Tag, typename IntegralType, typename... Params >
+inline constexpr IntegralType extract_required_integral_v = extract_required_t< Tag, Params... >::value;
+
+/// Extract required bool value — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+inline constexpr bool extract_required_bool_v = extract_required_integral_v< Tag, bool, Params... >;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // public API — validation
