@@ -70,10 +70,10 @@ public:
     using allocator_type = nova::parameter::extract_t< allocator_tag, std::allocator< int >, Params... >;
 
     static constexpr bool is_fixed_sized
-        = nova::parameter::extract_integral_v< fixed_sized_tag, bool, false, Params... >;
+        = nova::parameter::extract_integral_or_v< fixed_sized_tag, bool, false, Params... >;
 
     static constexpr std::size_t static_capacity
-        = nova::parameter::extract_integral_v< capacity_tag, std::size_t, 0, Params... >;
+        = nova::parameter::extract_integral_v< capacity_tag, std::size_t, Params... >;
 
     static constexpr bool has_mutex = nova::parameter::has_parameter_v< mutex_tag, Params... >;
 
@@ -89,7 +89,7 @@ public:
     using allocator_type = nova::parameter::extract_t< allocator_tag, std::allocator< int >, Params... >;
 
     static constexpr std::size_t static_capacity
-        = nova::parameter::extract_integral_v< capacity_tag, std::size_t, 0, Params... >;
+        = nova::parameter::extract_integral_or_v< capacity_tag, std::size_t, 0, Params... >;
 };
 
 // ---- concept_param example ----
@@ -175,11 +175,12 @@ static_assert( std::is_same_v< nova::parameter::extract_t< example::allocator_ta
                                                            example::capacity< 64 > >,
                                std::allocator< float > > ); // found
 
-// extract_integral_v
-static_assert( nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, 0, example::capacity< 42 > >
+// extract_integral_or_v
+static_assert( nova::parameter::extract_integral_or_v< example::capacity_tag, std::size_t, 0, example::capacity< 42 > >
                == 42 );
-static_assert( nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, 99, example::fixed_sized< true > >
-               == 99 ); // default
+static_assert(
+    nova::parameter::extract_integral_or_v< example::capacity_tag, std::size_t, 99, example::fixed_sized< true > >
+    == 99 ); // default
 
 // valid_parameters concept
 static_assert(
@@ -240,12 +241,17 @@ static_assert( std::is_same_v< concept_cont::allocator_type, std::allocator< int
 using concept_default = example::concept_container<>;
 static_assert( std::is_same_v< concept_default::allocator_type, std::allocator< int > > );
 
-// extract_bool_v
-static_assert( nova::parameter::extract_bool_v< example::fixed_sized_tag, false, example::fixed_sized< true > > == true );
-static_assert( nova::parameter::extract_bool_v< example::fixed_sized_tag, false, example::capacity< 64 > > == false );
-static_assert( nova::parameter::extract_bool_v< example::fixed_sized_tag, true > == true ); // default
+// extract_bool_or_v
+static_assert( nova::parameter::extract_bool_or_v< example::fixed_sized_tag, false, example::fixed_sized< true > > );
+static_assert( !nova::parameter::extract_bool_or_v< example::fixed_sized_tag, false, example::capacity< 64 > > );
+static_assert( nova::parameter::extract_bool_or_v< example::fixed_sized_tag, true > ); // default
 
-// extract_optional_integral_v
+// extract_integral_v (required — tag must be present)
+static_assert( nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, example::capacity< 42 > > == 42 );
+
+// extract_bool_v (required — tag must be present)
+static_assert( nova::parameter::extract_bool_v< example::fixed_sized_tag, example::fixed_sized< true > > );
+static_assert( !nova::parameter::extract_bool_v< example::fixed_sized_tag, example::fixed_sized< false > > );
 static_assert( nova::parameter::extract_optional_integral_v< example::capacity_tag, std::size_t, example::capacity< 42 > >
                == 42 );
 static_assert(
@@ -259,16 +265,6 @@ static_assert( std::is_same_v< nova::parameter::extract_required_t< example::all
                                std::allocator< float > > );
 static_assert( std::is_same_v< nova::parameter::extract_required_t< example::capacity_tag, example::capacity< 99 > >,
                                std::integral_constant< std::size_t, 99 > > );
-
-// extract_required_integral_v — tag present
-static_assert( nova::parameter::extract_required_integral_v< example::capacity_tag, std::size_t, example::capacity< 42 > >
-               == 42 );
-
-// extract_required_bool_v — tag present
-static_assert( nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< true > >
-               == true );
-static_assert( nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >
-               == false );
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Runtime tests
@@ -333,15 +329,22 @@ TEST_CASE( "has_parameter_v runtime check", "[parameter]" )
     REQUIRE( !no_cap );
 }
 
-TEST_CASE( "extract_integral_v runtime check", "[parameter]" )
+TEST_CASE( "extract_integral_or_v runtime check", "[parameter]" )
 {
     constexpr auto val
-        = nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, 0, example::capacity< 77 > >;
+        = nova::parameter::extract_integral_or_v< example::capacity_tag, std::size_t, 0, example::capacity< 77 > >;
     REQUIRE( val == 77 );
 
     constexpr auto def
-        = nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, 42, example::fixed_sized< true > >;
+        = nova::parameter::extract_integral_or_v< example::capacity_tag, std::size_t, 42, example::fixed_sized< true > >;
     REQUIRE( def == 42 );
+}
+
+TEST_CASE( "extract_integral_v required runtime check", "[parameter]" )
+{
+    constexpr auto val
+        = nova::parameter::extract_integral_v< example::capacity_tag, std::size_t, example::capacity< 77 > >;
+    REQUIRE( val == 77 );
 }
 
 TEST_CASE( "optional_container with no parameters", "[parameter]" )
@@ -366,10 +369,19 @@ TEST_CASE( "concept_param with valid allocator", "[parameter]" )
     a.deallocate( p, 1 );
 }
 
-TEST_CASE( "extract_bool_v", "[parameter]" )
+TEST_CASE( "extract_bool_or_v", "[parameter]" )
 {
-    constexpr bool t = nova::parameter::extract_bool_v< example::fixed_sized_tag, false, example::fixed_sized< true > >;
-    constexpr bool f = nova::parameter::extract_bool_v< example::fixed_sized_tag, false, example::capacity< 64 > >;
+    constexpr bool t
+        = nova::parameter::extract_bool_or_v< example::fixed_sized_tag, false, example::fixed_sized< true > >;
+    constexpr bool f = nova::parameter::extract_bool_or_v< example::fixed_sized_tag, false, example::capacity< 64 > >;
+    REQUIRE( t );
+    REQUIRE( !f );
+}
+
+TEST_CASE( "extract_bool_v required", "[parameter]" )
+{
+    constexpr bool t = nova::parameter::extract_bool_v< example::fixed_sized_tag, example::fixed_sized< true > >;
+    constexpr bool f = nova::parameter::extract_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >;
     REQUIRE( t );
     REQUIRE( !f );
 }
@@ -410,21 +422,286 @@ TEST_CASE( "extract_required_t returns correct type", "[parameter][required]" )
     REQUIRE( cap_type::value == 77 );
 }
 
-TEST_CASE( "extract_required_integral_v returns value", "[parameter][required]" )
+TEST_CASE( "extract_integral_v (required) returns value", "[parameter][required]" )
 {
-    constexpr auto val = nova::parameter::extract_required_integral_v< example::capacity_tag,
-                                                                       std::size_t,
-                                                                       example::fixed_sized< true >,
-                                                                       example::capacity< 55 > >;
+    constexpr auto val = nova::parameter::
+        extract_integral_v< example::capacity_tag, std::size_t, example::fixed_sized< true >, example::capacity< 55 > >;
     REQUIRE( val == 55 );
 }
 
-TEST_CASE( "extract_required_bool_v returns value", "[parameter][required]" )
+TEST_CASE( "extract_bool_v (required) returns value", "[parameter][required]" )
 {
-    constexpr bool t = nova::parameter::
-        extract_required_bool_v< example::fixed_sized_tag, example::capacity< 10 >, example::fixed_sized< true > >;
-    constexpr bool f
-        = nova::parameter::extract_required_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >;
+    constexpr bool t
+        = nova::parameter::extract_bool_v< example::fixed_sized_tag, example::capacity< 10 >, example::fixed_sized< true > >;
+    constexpr bool f = nova::parameter::extract_bool_v< example::fixed_sized_tag, example::fixed_sized< false > >;
     REQUIRE( t );
     REQUIRE( !f );
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// NTTP tests — integer and string keyword arguments
+
+namespace nttp_example {
+
+struct count_tag : nova::parameter::parameter_tag< count_tag >
+{};
+struct name_tag : nova::parameter::parameter_tag< name_tag >
+{};
+struct label_tag : nova::parameter::parameter_tag< label_tag >
+{};
+struct threshold_tag : nova::parameter::parameter_tag< threshold_tag >
+{};
+struct tolerance_tag : nova::parameter::parameter_tag< tolerance_tag >
+{};
+
+// Integer NTTP via integral_param
+template < int N >
+struct count : nova::parameter::integral_param< count_tag, int, N >
+{};
+
+// String NTTP via string_param
+template < nova::parameter::fixed_string S >
+struct name : nova::parameter::string_param< name_tag, S >
+{};
+
+template < nova::parameter::fixed_string S >
+struct label : nova::parameter::string_param< label_tag, S >
+{};
+
+// Float and double NTTPs
+template < float F >
+struct threshold : nova::parameter::float_param< threshold_tag, F >
+{};
+
+template < double D >
+struct tolerance : nova::parameter::double_param< tolerance_tag, D >
+{};
+
+using allowed = std::tuple< count_tag, name_tag, label_tag, threshold_tag, tolerance_tag >;
+
+} // namespace nttp_example
+
+// ---- integer NTTP tests ----
+
+TEST_CASE( "integral_param: extract integer NTTP (required)", "[parameter][nttp][integer]" )
+{
+    constexpr int val = nova::parameter::extract_integral_v< nttp_example::count_tag, int, nttp_example::count< 42 > >;
+    static_assert( val == 42 );
+    REQUIRE( val == 42 );
+}
+
+TEST_CASE( "integral_param: extract_integral_or_v with default when absent", "[parameter][nttp][integer]" )
+{
+    constexpr int val = nova::parameter::extract_integral_or_v< nttp_example::count_tag, int, 99 >;
+    static_assert( val == 99 );
+    REQUIRE( val == 99 );
+}
+
+TEST_CASE( "integral_param: has_parameter_v", "[parameter][nttp][integer]" )
+{
+    static_assert( nova::parameter::has_parameter_v< nttp_example::count_tag, nttp_example::count< 7 > > );
+    static_assert( !nova::parameter::has_parameter_v< nttp_example::count_tag > );
+    REQUIRE( nova::parameter::has_parameter_v< nttp_example::count_tag, nttp_example::count< 7 > > );
+    REQUIRE( !nova::parameter::has_parameter_v< nttp_example::count_tag > );
+}
+
+TEST_CASE( "integral_param: extract_optional_integral_v", "[parameter][nttp][integer]" )
+{
+    constexpr auto present
+        = nova::parameter::extract_optional_integral_v< nttp_example::count_tag, int, nttp_example::count< 5 > >;
+    constexpr auto absent = nova::parameter::extract_optional_integral_v< nttp_example::count_tag, int >;
+    static_assert( present.has_value() && *present == 5 );
+    static_assert( !absent.has_value() );
+    REQUIRE( present.has_value() );
+    REQUIRE( *present == 5 );
+    REQUIRE( !absent.has_value() );
+}
+
+TEST_CASE( "integral_param: no_duplicate_tags", "[parameter][nttp][integer]" )
+{
+    static_assert( nova::parameter::no_duplicate_tags_v< nttp_example::count< 1 >, nttp_example::name< "hello" > > );
+    static_assert( !nova::parameter::no_duplicate_tags_v< nttp_example::count< 1 >, nttp_example::count< 2 > > );
+    REQUIRE( nova::parameter::no_duplicate_tags_v< nttp_example::count< 1 >, nttp_example::name< "hello" > > );
+}
+
+// ---- string NTTP tests ----
+
+TEST_CASE( "string_param: extract_string_v required round-trip", "[parameter][nttp][string]" )
+{
+    constexpr auto val = nova::parameter::extract_string_v< nttp_example::name_tag, nttp_example::name< "hello" > >;
+    static_assert( val == "hello" );
+    REQUIRE( val == "hello" );
+}
+
+TEST_CASE( "string_param: extract_string_or_v with default when absent", "[parameter][nttp][string]" )
+{
+    constexpr auto val = nova::parameter::extract_string_or_v< nttp_example::name_tag, "fallback" >;
+    static_assert( val == "fallback" );
+    REQUIRE( val == "fallback" );
+}
+
+TEST_CASE( "string_param: extract_string_or_v with value present", "[parameter][nttp][string]" )
+{
+    constexpr auto val
+        = nova::parameter::extract_string_or_v< nttp_example::name_tag, "default", nttp_example::name< "hello" > >;
+    static_assert( val == "hello" );
+    REQUIRE( val == "hello" );
+}
+
+TEST_CASE( "string_param: has_parameter_v", "[parameter][nttp][string]" )
+{
+    static_assert( nova::parameter::has_parameter_v< nttp_example::name_tag, nttp_example::name< "foo" > > );
+    static_assert( !nova::parameter::has_parameter_v< nttp_example::name_tag > );
+    REQUIRE( nova::parameter::has_parameter_v< nttp_example::name_tag, nttp_example::name< "foo" > > );
+}
+
+TEST_CASE( "string_param: extract_optional_string_v", "[parameter][nttp][string]" )
+{
+    constexpr auto present
+        = nova::parameter::extract_optional_string_v< nttp_example::name_tag, nttp_example::name< "world" > >;
+    constexpr auto absent = nova::parameter::extract_optional_string_v< nttp_example::name_tag >;
+    static_assert( present.has_value() && *present == "world" );
+    static_assert( !absent.has_value() );
+    REQUIRE( present.has_value() );
+    REQUIRE( *present == "world" );
+    REQUIRE( !absent.has_value() );
+}
+
+TEST_CASE( "string_param: valid_parameters concept with mixed params", "[parameter][nttp][string]" )
+{
+    static_assert(
+        nova::parameter::valid_parameters< nttp_example::allowed, nttp_example::count< 3 >, nttp_example::name< "test" > > );
+    REQUIRE( (
+        nova::parameter::valid_parameters< nttp_example::allowed, nttp_example::count< 3 >, nttp_example::name< "test" > >));
+}
+
+TEST_CASE( "string_param: no_duplicate_tags", "[parameter][nttp][string]" )
+{
+    static_assert( nova::parameter::no_duplicate_tags_v< nttp_example::name< "a" >, nttp_example::label< "b" > > );
+    static_assert( !nova::parameter::no_duplicate_tags_v< nttp_example::name< "a" >, nttp_example::name< "b" > > );
+    REQUIRE( nova::parameter::no_duplicate_tags_v< nttp_example::name< "a" >, nttp_example::label< "b" > > );
+    REQUIRE( !nova::parameter::no_duplicate_tags_v< nttp_example::name< "a" >, nttp_example::name< "b" > > );
+}
+
+TEST_CASE( "fixed_string: equality and comparison", "[parameter][nttp][fixed_string]" )
+{
+    constexpr nova::parameter::fixed_string a { "hello" };
+    constexpr nova::parameter::fixed_string b { "hello" };
+    constexpr nova::parameter::fixed_string c { "world" };
+    static_assert( a == b );
+    static_assert( a != c );
+    static_assert( a == "hello" );
+    REQUIRE( a == b );
+    REQUIRE( a != c );
+    REQUIRE( a == "hello" );
+}
+
+// ---- float NTTP tests ----
+
+#if !( ( defined __clang__ ) && ( __clang_major__ < 18 ) )
+
+TEST_CASE( "float_param: extract_float_v required", "[parameter][nttp][float]" )
+{
+    constexpr float val
+        = nova::parameter::extract_float_v< nttp_example::threshold_tag, nttp_example::threshold< 3.14f > >;
+    REQUIRE( val == 3.14f );
+}
+
+TEST_CASE( "float_param: extract_float_or_v default when absent", "[parameter][nttp][float]" )
+{
+    constexpr float val = nova::parameter::extract_float_or_v< nttp_example::threshold_tag, 1.5f >;
+    REQUIRE( val == 1.5f );
+}
+
+TEST_CASE( "float_param: extract_float_or_v value present", "[parameter][nttp][float]" )
+{
+    constexpr float val
+        = nova::parameter::extract_float_or_v< nttp_example::threshold_tag, 0.0f, nttp_example::threshold< 3.14f > >;
+    REQUIRE( val == 3.14f );
+}
+
+TEST_CASE( "float_param: has_parameter_v", "[parameter][nttp][float]" )
+{
+    static_assert( nova::parameter::has_parameter_v< nttp_example::threshold_tag, nttp_example::threshold< 2.5f > > );
+    static_assert( !nova::parameter::has_parameter_v< nttp_example::threshold_tag > );
+    REQUIRE( nova::parameter::has_parameter_v< nttp_example::threshold_tag, nttp_example::threshold< 2.5f > > );
+}
+
+TEST_CASE( "float_param: extract_optional_float_v", "[parameter][nttp][float]" )
+{
+    constexpr auto present
+        = nova::parameter::extract_optional_float_v< nttp_example::threshold_tag, nttp_example::threshold< 0.5f > >;
+    constexpr auto absent = nova::parameter::extract_optional_float_v< nttp_example::threshold_tag >;
+    static_assert( present.has_value() );
+    static_assert( !absent.has_value() );
+    REQUIRE( present.has_value() );
+    REQUIRE( *present == 0.5f );
+    REQUIRE( !absent.has_value() );
+}
+
+// ---- double NTTP tests ----
+
+TEST_CASE( "double_param: extract_double_v required", "[parameter][nttp][double]" )
+{
+    constexpr double val
+        = nova::parameter::extract_double_v< nttp_example::tolerance_tag, nttp_example::tolerance< 1e-6 > >;
+    REQUIRE( val == 1e-6 );
+}
+
+TEST_CASE( "double_param: extract_double_or_v default when absent", "[parameter][nttp][double]" )
+{
+    constexpr double val = nova::parameter::extract_double_or_v< nttp_example::tolerance_tag, 0.01 >;
+    REQUIRE( val == 0.01 );
+}
+
+TEST_CASE( "double_param: extract_double_or_v value present", "[parameter][nttp][double]" )
+{
+    constexpr double val
+        = nova::parameter::extract_double_or_v< nttp_example::tolerance_tag, 0.0, nttp_example::tolerance< 1e-6 > >;
+    REQUIRE( val == 1e-6 );
+}
+
+TEST_CASE( "double_param: has_parameter_v", "[parameter][nttp][double]" )
+{
+    static_assert( nova::parameter::has_parameter_v< nttp_example::tolerance_tag, nttp_example::tolerance< 0.001 > > );
+    static_assert( !nova::parameter::has_parameter_v< nttp_example::tolerance_tag > );
+    REQUIRE( nova::parameter::has_parameter_v< nttp_example::tolerance_tag, nttp_example::tolerance< 0.001 > > );
+}
+
+TEST_CASE( "double_param: extract_optional_double_v", "[parameter][nttp][double]" )
+{
+    constexpr auto present
+        = nova::parameter::extract_optional_double_v< nttp_example::tolerance_tag, nttp_example::tolerance< 0.5 > >;
+    constexpr auto absent = nova::parameter::extract_optional_double_v< nttp_example::tolerance_tag >;
+    static_assert( present.has_value() );
+    static_assert( !absent.has_value() );
+    REQUIRE( present.has_value() );
+    REQUIRE( *present == 0.5 );
+    REQUIRE( !absent.has_value() );
+}
+
+TEST_CASE( "float and double params: no_duplicate_tags", "[parameter][nttp][float][double]" )
+{
+    static_assert(
+        nova::parameter::no_duplicate_tags_v< nttp_example::threshold< 1.0f >, nttp_example::tolerance< 0.001 > > );
+    static_assert(
+        !nova::parameter::no_duplicate_tags_v< nttp_example::threshold< 1.0f >, nttp_example::threshold< 2.0f > > );
+    REQUIRE( nova::parameter::no_duplicate_tags_v< nttp_example::threshold< 1.0f >, nttp_example::tolerance< 0.001 > > );
+    REQUIRE( !nova::parameter::no_duplicate_tags_v< nttp_example::threshold< 1.0f >, nttp_example::threshold< 2.0f > > );
+}
+
+TEST_CASE( "mixed params: float, double, integer, string, type", "[parameter][nttp][mixed]" )
+{
+    static_assert( nova::parameter::valid_parameters< nttp_example::allowed,
+                                                      nttp_example::count< 5 >,
+                                                      nttp_example::name< "test" >,
+                                                      nttp_example::threshold< 2.5f >,
+                                                      nttp_example::tolerance< 1e-9 > > );
+    REQUIRE( (nova::parameter::valid_parameters< nttp_example::allowed,
+                                                 nttp_example::count< 5 >,
+                                                 nttp_example::name< "test" >,
+                                                 nttp_example::threshold< 2.5f >,
+                                                 nttp_example::tolerance< 1e-9 > >));
+}
+
+#endif

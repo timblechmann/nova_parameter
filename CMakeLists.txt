@@ -46,6 +46,8 @@ include(CMakeDependentOption)
 
 option(NOVA_PARAMETER_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(NOVA_PARAMETER_TESTS)
+    set(CMAKE_FOLDER test)
+
     if (NOT TARGET Catch2::Catch2WithMain)
         if (NOT COMMAND CPMAddPackage)
             set(CPM_DOWNLOAD_VERSION 0.42.1)
@@ -93,6 +95,11 @@ if(NOVA_PARAMETER_TESTS)
         missing_required_parameter
         concept_param_violation
         extract_required_missing
+        extract_integral_missing
+        extract_bool_missing
+        extract_float_missing
+        extract_double_missing
+        extract_string_missing
     )
     foreach(_neg_test IN LISTS negative_compile_test)
         add_executable(nova_parameter_neg_${_neg_test} EXCLUDE_FROM_ALL
