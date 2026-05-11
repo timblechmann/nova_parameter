@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 
@@ -211,6 +213,50 @@ struct extract_required_impl
 } // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// fixed_string: compile-time string type usable as NTTP (C++20)
+
+/// Compile-time fixed-length string. Use as NTTP in string_param.
+/// Example: fixed_string{"hello"} — length includes null terminator.
+template < std::size_t N >
+struct fixed_string
+{
+    char data[ N ] {};
+
+    constexpr fixed_string( const char ( &s )[ N ] )
+    {
+        std::copy_n( s, N, data );
+    }
+
+    constexpr auto operator<=>( const fixed_string& ) const = default;
+    constexpr auto operator<=>( std::string_view rhs ) const
+    {
+        return std::string_view { *this } <=> rhs;
+    }
+    constexpr explicit operator std::string_view() const
+    {
+        return { data, N - 1 }; // exclude null terminator
+    }
+};
+
+template < std::size_t N >
+fixed_string( const char ( & )[ N ] ) -> fixed_string< N >;
+
+/// Holds a compile-time string as a type-level constant (analogous to std::integral_constant).
+template < fixed_string S >
+struct string_constant
+{
+    static constexpr auto value = S;
+};
+
+/// Holds a compile-time floating-point value as a type-level constant (analogous to std::integral_constant).
+/// C++20 allows floating-point NTTPs; this type wraps them for use as parameter value_type.
+template < typename FloatType, FloatType V >
+struct float_constant
+{
+    static constexpr FloatType value = V;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // public API — extraction
 
 /// Extract value type for Tag from Params, or Default if absent.
@@ -237,14 +283,26 @@ inline constexpr bool no_duplicate_tags_v = detail::no_duplicate_tags_impl< Para
 template < typename AllowedTagsTuple, typename... Params >
 inline constexpr bool all_tags_allowed_v = detail::all_tags_allowed_impl< AllowedTagsTuple, Params... >::value;
 
-/// Extract integral value from parameters, with default.
+/// Extract value type for Tag from Params — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+using extract_required_t = typename detail::extract_required_impl< Tag, Params... >::type;
+
+/// Extract integral value — static_assert if Tag absent.
+template < typename Tag, typename IntegralType, typename... Params >
+inline constexpr IntegralType extract_integral_v = extract_required_t< Tag, Params... >::value;
+
+/// Extract integral value with compile-time default (returned when Tag is absent).
 template < typename Tag, typename IntegralType, IntegralType Default, typename... Params >
-inline constexpr IntegralType extract_integral_v
+inline constexpr IntegralType extract_integral_or_v
     = extract_t< Tag, std::integral_constant< IntegralType, Default >, Params... >::value;
 
-/// Extract bool value from parameters, with default.
+/// Extract bool — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+inline constexpr bool extract_bool_v = extract_integral_v< Tag, bool, Params... >;
+
+/// Extract bool with compile-time default.
 template < typename Tag, bool Default, typename... Params >
-inline constexpr bool extract_bool_v = extract_integral_v< Tag, bool, Default, Params... >;
+inline constexpr bool extract_bool_or_v = extract_integral_or_v< Tag, bool, Default, Params... >;
 
 /// Extract integral value as std::optional<IntegralType>.
 /// Contains a value if Tag is present in Params, std::nullopt otherwise.
@@ -258,24 +316,65 @@ inline constexpr std::optional< IntegralType > extract_optional_integral_v = [](
         return std::optional< IntegralType > { static_cast< IntegralType >( found_type::value ) };
 }();
 
-/// has_parameter_v as std::optional<std::true_type> bridge: for type parameters, extract_optional_t
-/// provides a type-level "was it present?" idiom.
-/// Use extract_t with a sentinel default to check presence:
-///   using MyType = extract_t<my_tag, void, Params...>;
-///   if constexpr (!std::is_same_v<MyType, void>) { /* present */ }
-/// Or use has_parameter_v for a bool check.
-
-/// Extract value type for Tag from Params — static_assert if Tag absent.
+/// Extract fixed_string — static_assert if Tag absent.
 template < typename Tag, typename... Params >
-using extract_required_t = typename detail::extract_required_impl< Tag, Params... >::type;
+inline constexpr auto extract_string_v = extract_required_t< Tag, Params... >::value;
 
-/// Extract required integral value — static_assert if Tag absent.
-template < typename Tag, typename IntegralType, typename... Params >
-inline constexpr IntegralType extract_required_integral_v = extract_required_t< Tag, Params... >::value;
+/// Extract fixed_string with compile-time default.
+template < typename Tag, fixed_string Default, typename... Params >
+inline constexpr auto extract_string_or_v = extract_t< Tag, string_constant< Default >, Params... >::value;
 
-/// Extract required bool value — static_assert if Tag absent.
+/// Extract fixed_string as std::optional<std::string_view>.
+/// Contains a value if Tag is present, std::nullopt otherwise.
 template < typename Tag, typename... Params >
-inline constexpr bool extract_required_bool_v = extract_required_integral_v< Tag, bool, Params... >;
+inline constexpr std::optional< std::string_view > extract_optional_string_v = []() constexpr {
+    using sentinel   = detail::not_found_t;
+    using found_type = extract_t< Tag, sentinel, Params... >;
+    if constexpr ( std::is_same_v< found_type, sentinel > )
+        return std::optional< std::string_view > {};
+    else
+        return std::optional< std::string_view > { found_type::value };
+}();
+
+/// Extract float — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+inline constexpr float extract_float_v = extract_required_t< Tag, Params... >::value;
+
+/// Extract float with compile-time default.
+template < typename Tag, float Default, typename... Params >
+inline constexpr float extract_float_or_v = extract_t< Tag, float_constant< float, Default >, Params... >::value;
+
+/// Extract float as std::optional<float>.
+/// Contains a value if Tag is present, std::nullopt otherwise.
+template < typename Tag, typename... Params >
+inline constexpr std::optional< float > extract_optional_float_v = []() constexpr {
+    using sentinel   = detail::not_found_t;
+    using found_type = extract_t< Tag, sentinel, Params... >;
+    if constexpr ( std::is_same_v< found_type, sentinel > )
+        return std::optional< float > {};
+    else
+        return std::optional< float > { found_type::value };
+}();
+
+/// Extract double — static_assert if Tag absent.
+template < typename Tag, typename... Params >
+inline constexpr double extract_double_v = extract_required_t< Tag, Params... >::value;
+
+/// Extract double with compile-time default.
+template < typename Tag, double Default, typename... Params >
+inline constexpr double extract_double_or_v = extract_t< Tag, float_constant< double, Default >, Params... >::value;
+
+/// Extract double as std::optional<double>.
+/// Contains a value if Tag is present, std::nullopt otherwise.
+template < typename Tag, typename... Params >
+inline constexpr std::optional< double > extract_optional_double_v = []() constexpr {
+    using sentinel   = detail::not_found_t;
+    using found_type = extract_t< Tag, sentinel, Params... >;
+    if constexpr ( std::is_same_v< found_type, sentinel > )
+        return std::optional< double > {};
+    else
+        return std::optional< double > { found_type::value };
+}();
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // public API — validation
@@ -339,10 +438,33 @@ template < typename Tag, typename IntegralType, IntegralType V >
 struct integral_param : parameter< Tag, std::integral_constant< IntegralType, V > >
 {};
 
+/// Float parameter: wraps a float under a tag.
+/// Usage: `template <float F> struct threshold : float_param<threshold_tag, F> {};`
+template < typename Tag, float F >
+struct float_param : parameter< Tag, float_constant< float, F > >
+{};
+
+/// Double parameter: wraps a double under a tag.
+/// Usage: `template <double D> struct epsilon : double_param<epsilon_tag, D> {};`
+template < typename Tag, double D >
+struct double_param : parameter< Tag, float_constant< double, D > >
+{};
+
 /// Flag parameter: tag-only, no meaningful value. value_type = std::true_type.
 /// Usage: `struct enable_foo : flag_param<enable_foo_tag> {};`
 template < typename Tag >
 struct flag_param : parameter< Tag, std::true_type >
+{};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// string_param: wraps a fixed_string NTTP under a tag
+
+/// String parameter: wraps a compile-time string literal under a tag.
+/// Usage:
+///   template <nova::parameter::fixed_string S>
+///   struct name : nova::parameter::string_param<name_tag, S> {};
+template < typename Tag, fixed_string S >
+struct string_param : parameter< Tag, string_constant< S > >
 {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
