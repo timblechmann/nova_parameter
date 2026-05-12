@@ -272,6 +272,10 @@ cmake --build build
 ctest --test-dir build
 ```
 
+## References
+
+This library is inspired by [boost.parameter](https://www.boost.org/doc/libs/latest/libs/parameter/doc/html/index.html). It tries to provide a similar functionality but with a cleaner and more modern API that takes advantage of C++20 features.
+
 ## License
 
 MIT — see License.txt. Please use this code responsibly and ethically.
